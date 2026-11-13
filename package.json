@@ -1,0 +1,39 @@
+{
+  "name": "uaeu-blackboard-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for UAEU Blackboard Learn (uaeu.blackboard.com): courses, assignments, discussions, messages, calendar, groups, content, announcements, assessments, grading and enrollments.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AhmTb/uaeu-blackboard-mcp.git"
+  },
+  "bin": {
+    "uaeu-blackboard-mcp": "dist/cli.js"
+  },
+  "files": [
+    "dist/**/*.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "login": "node dist/cli.js login",
+    "status": "node dist/cli.js status",
+    "doctor": "node dist/cli.js doctor",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "playwright-core": "^1.55.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}

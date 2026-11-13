@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "uaeu-blackboard": {
+      "command": "npx",
+      "args": ["--yes", "https://github.com/AhmTb/uaeu-blackboard-mcp/releases/download/v0.1.0/uaeu-blackboard-mcp-0.1.0.tgz"],
+      "env": {
+        "BB_ALLOW_WRITES": "1"
+      }
+    }
+  }
+}
