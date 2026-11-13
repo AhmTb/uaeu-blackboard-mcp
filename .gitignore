@@ -4,9 +4,7 @@ dist/
 .codex/
 .vscode/
 .idea/
-test/*
-!test/reading.test.mjs
-!test/groups.test.mjs
+test/
 tests/
 scripts/
 work/
