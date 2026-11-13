@@ -2,7 +2,7 @@
   "mcpServers": {
     "uaeu-blackboard": {
       "command": "npx",
-      "args": ["--yes", "https://github.com/AhmTb/uaeu-blackboard-mcp/releases/download/v0.1.0/uaeu-blackboard-mcp-0.1.0.tgz"],
+      "args": ["--yes", "--package=https://github.com/AhmTb/uaeu-blackboard-mcp/releases/download/v0.1.0/uaeu-blackboard-mcp-0.1.0.tgz", "uaeu-blackboard-mcp"],
       "env": {
         "BB_ALLOW_WRITES": "1"
       }

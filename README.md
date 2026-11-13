@@ -50,7 +50,7 @@ does not allow them.
 Install Node.js 20+ and Edge or Chrome, then sign in once:
 
 ```sh
-npx --yes https://github.com/AhmTb/uaeu-blackboard-mcp/releases/download/v0.1.0/uaeu-blackboard-mcp-0.1.0.tgz login
+npx --yes --package=https://github.com/AhmTb/uaeu-blackboard-mcp/releases/download/v0.1.0/uaeu-blackboard-mcp-0.1.0.tgz uaeu-blackboard-mcp login
 ```
 
 Complete UAEU SSO and MFA in the browser that opens. The prebuilt package is downloaded from
@@ -62,13 +62,13 @@ compiler. Each account signs in separately; students and instructors use the sam
 On Windows (PowerShell):
 
 ```powershell
-codex mcp add uaeu-blackboard --env BB_ALLOW_WRITES=1 -- cmd /d /c npx --yes https://github.com/AhmTb/uaeu-blackboard-mcp/releases/download/v0.1.0/uaeu-blackboard-mcp-0.1.0.tgz
+codex mcp add uaeu-blackboard --env BB_ALLOW_WRITES=1 -- cmd /d /c npx --yes --package=https://github.com/AhmTb/uaeu-blackboard-mcp/releases/download/v0.1.0/uaeu-blackboard-mcp-0.1.0.tgz uaeu-blackboard-mcp
 ```
 
 On macOS or Linux:
 
 ```sh
-codex mcp add uaeu-blackboard --env BB_ALLOW_WRITES=1 -- npx --yes https://github.com/AhmTb/uaeu-blackboard-mcp/releases/download/v0.1.0/uaeu-blackboard-mcp-0.1.0.tgz
+codex mcp add uaeu-blackboard --env BB_ALLOW_WRITES=1 -- npx --yes --package=https://github.com/AhmTb/uaeu-blackboard-mcp/releases/download/v0.1.0/uaeu-blackboard-mcp-0.1.0.tgz uaeu-blackboard-mcp
 ```
 
 Check registration with `codex mcp get uaeu-blackboard`. Reopen Codex if needed, then ask it
@@ -80,7 +80,7 @@ launch; run the login command before registering the server so the package is al
 On Windows:
 
 ```powershell
-claude mcp add --scope user --env BB_ALLOW_WRITES=1 --transport stdio uaeu-blackboard -- cmd /d /c npx --yes https://github.com/AhmTb/uaeu-blackboard-mcp/releases/download/v0.1.0/uaeu-blackboard-mcp-0.1.0.tgz
+claude mcp add --scope user --env BB_ALLOW_WRITES=1 --transport stdio uaeu-blackboard -- cmd /d /c npx --yes --package=https://github.com/AhmTb/uaeu-blackboard-mcp/releases/download/v0.1.0/uaeu-blackboard-mcp-0.1.0.tgz uaeu-blackboard-mcp
 ```
 
 On macOS or Linux, use the same command with `-- npx --yes ...` instead of
@@ -97,7 +97,7 @@ command, arguments and environment. Existing server entries should remain intact
   "mcpServers": {
     "uaeu-blackboard": {
       "command": "npx",
-      "args": ["--yes", "https://github.com/AhmTb/uaeu-blackboard-mcp/releases/download/v0.1.0/uaeu-blackboard-mcp-0.1.0.tgz"],
+      "args": ["--yes", "--package=https://github.com/AhmTb/uaeu-blackboard-mcp/releases/download/v0.1.0/uaeu-blackboard-mcp-0.1.0.tgz", "uaeu-blackboard-mcp"],
       "env": { "BB_ALLOW_WRITES": "1" }
     }
   }
@@ -116,7 +116,7 @@ VS Code uses a `servers` wrapper in its MCP configuration instead of `mcpServers
     "uaeu-blackboard": {
       "type": "stdio",
       "command": "npx",
-      "args": ["--yes", "https://github.com/AhmTb/uaeu-blackboard-mcp/releases/download/v0.1.0/uaeu-blackboard-mcp-0.1.0.tgz"],
+      "args": ["--yes", "--package=https://github.com/AhmTb/uaeu-blackboard-mcp/releases/download/v0.1.0/uaeu-blackboard-mcp-0.1.0.tgz", "uaeu-blackboard-mcp"],
       "env": { "BB_ALLOW_WRITES": "1" }
     }
   }
@@ -141,16 +141,19 @@ Package: https://github.com/AhmTb/uaeu-blackboard-mcp/releases/download/v0.1.0/u
 
 1. Read this repository's README. Detect my OS and the current AI client. Check
    Node.js 20+, npm/npx, and Edge or Chrome. Report any missing prerequisite.
-2. Run `npx --yes <Package URL> --help` to verify the prebuilt download works.
+2. Run `npx --yes --package=<Package URL> uaeu-blackboard-mcp --help`
+   to verify the prebuilt download works.
    Git and a TypeScript build are unnecessary for the release package.
-3. Run `npx --yes <Package URL> login`. I will complete UAEU SSO and MFA in the
+3. Run `npx --yes --package=<Package URL> uaeu-blackboard-mcp login`.
+   I will complete UAEU SSO and MFA in the
    browser. Wait for successful login. Keep passwords, cookies, tokens and the
    browser profile out of chat and MCP configuration.
 4. Register a local stdio server named `uaeu-blackboard` for my current client
    with BB_ALLOW_WRITES=1. Use its supported configuration format, preserving
    existing entries. Prefer user scope. On Windows use command `cmd` with args
-   `/d`, `/c`, `npx`, `--yes`, and the Package URL. On macOS/Linux use command
-   `npx` with args `--yes` and the Package URL. Set startup timeout to 60 seconds
+   `/d`, `/c`, `npx`, `--yes`, `--package=<Package URL>`, `uaeu-blackboard-mcp`.
+   On macOS/Linux use command `npx` with args `--yes`, `--package=<Package URL>`,
+   `uaeu-blackboard-mcp`. Set startup timeout to 60 seconds
    if the client supports it. Ask which client only if it cannot be detected.
 5. Verify the saved server entry and a real MCP initialization. Run `bb_whoami`
    and `bb_list_courses` when the tools are available. Use read-only checks;
