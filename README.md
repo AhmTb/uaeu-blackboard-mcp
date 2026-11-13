@@ -137,36 +137,6 @@ Writes stay disabled unless you append `--env BB_ALLOW_WRITES=1`; individual wri
 tools still require confirmation. Restart or reconnect the client after registration.
 Registration saves the launch command; npm downloads the server when it runs.
 
-### Short npm command (requires npm publication)
-
-The name `uaeu-blackboard-mcp` is not yet published on npm. **The following commands
-become usable after the maintainer publishes the package**, and do not work yet:
-
-```sh
-npx --yes uaeu-blackboard-mcp@latest login
-npx --yes add-mcp uaeu-blackboard-mcp@latest --global
-```
-
-The second command offers client selection and configures it automatically. For Codex
-without prompts, append `--agent codex --yes`. Blackboard SSO and MFA remain a separate
-interactive sign-in; the installer does not need your password in client settings.
-
-Maintainer publication, from the repository root:
-
-```sh
-npm ci
-npm test
-npm pack --dry-run
-npm login
-npm publish --access public
-```
-
-`prepack` builds the JavaScript before packing or publishing. The package allowlist
-ships compiled JavaScript, README, LICENSE, and package metadata; source, tests, browser
-profiles, session files, and local settings are excluded. npm authentication and any
-required two-factor approval must be completed by the publishing account owner.
-For subsequent releases, increment the package version before publishing.
-
 ### Codex
 
 On Windows (PowerShell):
