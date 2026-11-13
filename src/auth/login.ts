@@ -1,5 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { createInterface } from 'node:readline/promises';
+import { resourceUrl } from '../bb/resources.js';
 import { chromium, type BrowserContext, type Page } from 'playwright-core';
 import type { Config } from '../config.js';
 import {
@@ -58,6 +60,24 @@ async function launchBrowser(config: Config): Promise<BrowserContext> {
       '`uaeu-blackboard-mcp login --cookie "<Cookie header>"`.\n' +
       (lastError instanceof Error ? lastError.message : String(lastError)),
   );
+}
+
+/** Separate, opt-in login for linked course services; never opens the user's Chrome profile. */
+export async function connectLinkedService(config: Config, value: string): Promise<void> {
+  const url=resourceUrl(value==='google'?'https://accounts.google.com/':value==='zoom'?'https://zoom.us/signin':value);
+  if (!/(^|\.)(google\.com|zoom\.us)$/.test(url.hostname)) throw new Error('connect supports Google and Zoom. Use google, zoom, or an HTTPS URL on these services.');
+  if (!process.stdin.isTTY) throw new Error('Run connect in an interactive terminal to complete sign-in yourself.');
+  const context=await launchBrowser({...config,stateDir:path.join(config.stateDir,'linked')});
+  const input=createInterface({input:process.stdin,output:process.stdout});
+  try {
+    const page=context.pages()[0]??await context.newPage();
+    await page.goto(url.href,{waitUntil:'domcontentloaded',timeout:60000});
+    await input.question('Sign in in the separate browser window, then press Enter here to save this linked-site session: ',{signal:AbortSignal.timeout(LOGIN_TIMEOUT_MS)});
+    const state=emptyState(url.origin);
+    state.cookies=toStoredCookies((await context.cookies()).filter(c=>!/(^|\.)blackboard\.com$/.test(c.domain.replace(/^\./,''))));
+    writeState({...config,sessionFile:path.join(config.stateDir,'linked-session.json')},state);
+    log('Linked-site session saved locally. Retry bb_read_link.');
+  } finally {input.close();await context.close().catch(()=>undefined);}
 }
 
 async function exportUser(config: Config, state: SessionState): Promise<SessionUser | undefined> {

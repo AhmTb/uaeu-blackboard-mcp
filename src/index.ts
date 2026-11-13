@@ -16,6 +16,8 @@ import { registerAssessmentTools } from './tools/assessments.js';
 import { registerGradingTools } from './tools/grading.js';
 import { registerEnrollmentTools } from './tools/enrollment.js';
 import { registerRawTools } from './tools/raw.js';
+import { registerReadingTools } from './tools/reading.js';
+import { registerStudentTools } from './tools/student.js';
 
 export const VERSION = '0.1.0';
 
@@ -57,6 +59,8 @@ export async function startServer(): Promise<void> {
   registerGradingTools(server, context);
   registerEnrollmentTools(server, context);
   registerRawTools(server, context);
+  registerReadingTools(server, context);
+  registerStudentTools(server, context);
 
   const timer = setInterval(() => {
     void client.keepAlive();

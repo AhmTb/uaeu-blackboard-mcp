@@ -39,6 +39,61 @@ Instructor-only writes are implemented against Blackboard's documented request s
 not be exercised from a student account. They fail closed with a permission error when your role
 does not allow them.
 
+## Reading files and course links
+
+The local connector also provides these read-only tools:
+
+| Tool | Purpose |
+|---|---|
+| `bb_get_course_content` | Find files and posted links across the outline, with created/modified dates |
+| `bb_list_attachments` | Resolve downloadable files attached to a content item |
+| `bb_get_attachment` | Download a file and return its extracted text, saved path and limitations |
+| `bb_read_link` | Read a link posted in the specified course content or announcement |
+| `bb_get_upcoming_work` | Combine upcoming deadlines and recently overdue work across courses |
+| `bb_get_recent_updates` | Combine changed content, announcements, assignments and grades on changed columns |
+| `bb_get_assignment_context` | Package assignment instructions, status, files, links, rubric associations and related announcements |
+
+For example, find the newest lecture with `bb_get_course_content`, then pass its `courseId`
+and `contentId` to `bb_get_attachment`. Continue long documents by returning `nextOffset`
+as `offset`. Pages default to 20,000 characters. Extraction results are cached in memory
+for ten minutes to make continuation calls cheap.
+
+Supported files: PDF text by page, PPTX slides and speaker notes, DOCX paragraphs and notes,
+XLSX as CSV per worksheet, Jupyter notebook source, HTML and plain text/code. Notebook cells
+are never executed. Spreadsheets show cached formula results without recalculation. Images,
+slide diagrams, scanned PDFs, animations and legacy `.ppt`/`.doc`/`.xls` formats are not
+interpreted. Scans need a separate OCR reader. Files are limited to 50 MiB, expanded Office
+XML to 100 MiB, and returned document text to two million characters; limits are reported.
+Downloads go to `BB_DOWNLOAD_DIR`, defaulting to `Downloads/blackboard`, with sanitized,
+content-hashed filenames. These tools never submit work or modify Blackboard.
+
+`bb_read_link` verifies the URL against the supplied course source. Pass `contentId` or
+`announcementId` for an exact source, or omit both to search that course's outline and first
+100 announcements. It supports Google Docs/Slides/Sheets exports, Drive files, Colab notebooks,
+ordinary web pages and linked files. Public same-origin HTML caption tracks can be read.
+YouTube returns title/channel metadata, not a transcript. Zoom and other recording pages are
+best-effort page text/captions; protected recording APIs, Syracuse-specific video services,
+live meetings and interactive LTI tools are not implemented. Private files require access
+on their own service. Sign in yourself from a terminal when needed:
+
+```sh
+node dist/cli.js connect google
+node dist/cli.js connect zoom
+```
+
+The CLI opens a separate browser profile and saves linked-site cookies locally, separately
+from Blackboard. It does not copy the user's Chrome profile. Google may refuse automated
+sign-in. Sessions expire normally, and access failures are returned explicitly. Each HTTPS
+redirect is checked, DNS is pinned to public addresses, and cookies stay domain/path scoped.
+
+Upcoming work uses Asia/Dubai day boundaries and preserves unknown submission states.
+Cross-course sweeps check at most 20 available courses and report skipped courses/source
+failures. Recent update dates indicate edits as well as uploads; grades entered on unchanged
+older columns can be missed. Deadlines outside Blackboard are not included.
+
+After rebuilding an already-running MCP, reconnect the connector or restart its host so the
+client discovers the new tools. Run `npm test` for the extraction/reading regression suite.
+
 ## Requirements
 
 - Node.js 20 or newer

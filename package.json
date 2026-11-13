@@ -25,11 +25,16 @@
     "login": "node dist/cli.js login",
     "status": "node dist/cli.js status",
     "doctor": "node dist/cli.js doctor",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test test/*.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",
+    "fast-xml-parser": "^5.12.1",
+    "fflate": "^0.8.3",
+    "ipaddr.js": "^2.5.0",
     "playwright-core": "^1.55.0",
+    "unpdf": "^2.1.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {

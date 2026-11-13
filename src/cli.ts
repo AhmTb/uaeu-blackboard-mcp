@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { loadConfig } from './config.js';
 import { readState } from './state.js';
-import { loginInteractive, loginWithCookieHeader } from './auth/login.js';
+import { connectLinkedService, loginInteractive, loginWithCookieHeader } from './auth/login.js';
 import { pickApiMode, probeSurfaces } from './bb/probe.js';
 
 function usage(): void {
@@ -18,6 +18,8 @@ function usage(): void {
       '  uaeu-blackboard-mcp status          Show the stored session',
       '  uaeu-blackboard-mcp probe           Test both API surfaces',
       '  uaeu-blackboard-mcp doctor          Diagnose configuration',
+      '  uaeu-blackboard-mcp connect google  Sign in to linked Google files in a separate browser',
+      '  uaeu-blackboard-mcp connect zoom    Sign in to linked Zoom recordings',
       '',
       'Environment:',
       '  BB_URL, BB_ALLOW_WRITES=1, BB_STATE_DIR, BB_PAGE_SIZE',
@@ -119,6 +121,10 @@ async function main(): Promise<void> {
   const [command = 'serve', ...args] = process.argv.slice(2);
 
   switch (command) {
+    case 'connect':
+      if(!args[0])throw new Error('Use connect google, connect zoom, or connect <Google/Zoom HTTPS URL>.');
+      await connectLinkedService(loadConfig(),args[0]);
+      return;
     case 'login':
       await cmdLogin(args);
       return;

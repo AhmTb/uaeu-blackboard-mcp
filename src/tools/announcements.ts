@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ToolContext } from '../index.js';
 import { BlackboardApi, htmlToText } from '../bb/api.js';
+import { linksFrom } from '../bb/resources.js';
 import { assertWrites, json, tool } from './util.js';
 
 export function registerAnnouncementTools(server: McpServer, context: ToolContext): void {
@@ -24,6 +25,7 @@ export function registerAnnouncementTools(server: McpServer, context: ToolContex
         announcements: announcements.map((announcement) => ({
           id: announcement.id,
           title: announcement.title,
+          links: linksFrom(announcement, context.client.config.baseUrl),
           body: htmlToText(announcement.body?.rawText ?? announcement.body?.displayText),
           createdDate: announcement.createdDate,
           modifiedDate: announcement.modifiedDate,

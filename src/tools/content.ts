@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ToolContext } from '../index.js';
 import { BlackboardApi } from '../bb/api.js';
+import { inlineAttachments, linksFrom } from '../bb/resources.js';
 import { assertWrites, json, tool } from './util.js';
 
 export function registerContentTools(server: McpServer, context: ToolContext): void {
@@ -40,6 +41,10 @@ export function registerContentTools(server: McpServer, context: ToolContext): v
           title: item.title,
           handler: item.contentHandler,
           visibility: item.visibility,
+          modifiedDate: item.modifiedDate ?? item.modified,
+          createdDate: item.createdDate ?? item.created,
+          attachments: inlineAttachments(item, context.client.config.baseUrl),
+          links: linksFrom(item, context.client.config.baseUrl),
           dueDate: item.genericReadOnlyData?.dueDate,
           description: includeDescriptions ? item.description : undefined,
           hasChildren: Boolean(item.contentDetail?.[item.contentHandler]?.isFolder),
@@ -87,14 +92,14 @@ export function registerContentTools(server: McpServer, context: ToolContext): v
     'bb_get_content',
     {
       title: 'Get content item',
-      description: 'Get one content item with its body text, attachments, due date and permissions.',
+      description: 'Get one content item with its body text, file metadata, posted links, due date and permissions. Read file contents with bb_get_attachment.',
       inputSchema: { courseId: z.string(), contentId: z.string() },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     tool(async ({ courseId, contentId }) => {
       const resolved = await api.resolveCourse(courseId);
       const item = await api.raw.get<Record<string, any>>(`/courses/${resolved}/contents/${contentId}`);
-      return json(item);
+      return json({...item,availableFiles:inlineAttachments(item,context.client.config.baseUrl),postedLinks:linksFrom(item,context.client.config.baseUrl)});
     }),
   );
 

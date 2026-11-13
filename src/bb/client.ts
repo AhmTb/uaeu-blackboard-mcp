@@ -1,6 +1,8 @@
 import type { Config } from '../config.js';
 import { setTimeout as delay } from 'node:timers/promises';
-import { cookieHeaderFor, writeState, type SessionState } from '../state.js';
+import { cookieHeaderFor, readState, writeState, type SessionState } from '../state.js';
+import path from 'node:path';
+import { blackboardHost, fetchResource, type Resource } from './resources.js';
 
 export class BlackboardError extends Error {
   readonly status: number;
@@ -74,6 +76,19 @@ export class BlackboardClient {
 
   get user() {
     return this.state.user;
+  }
+
+  /** GET a course resource; cookies remain domain/path scoped on every redirect. */
+  readResource(url: string, blackboardOnly = false): Promise<Resource> {
+    return fetchResource(url, {
+      baseUrl: this.config.baseUrl, timeoutMs: this.config.timeoutMs,
+      blackboardOnly, cookieFor: target => {
+        if (blackboardHost(new URL(target),this.config.baseUrl)) return cookieHeaderFor(this.state,target);
+        if (blackboardOnly) return '';
+        const linked=readState({...this.config,sessionFile:path.join(this.config.stateDir,'linked-session.json')});
+        return linked ? cookieHeaderFor(linked,target) : '';
+      },
+    });
   }
 
   /** `/learn/api/v1` for browser sessions, `/learn/api/public/v1` for OAuth. */

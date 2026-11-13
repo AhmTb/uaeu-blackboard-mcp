@@ -4,7 +4,8 @@ dist/
 .codex/
 .vscode/
 .idea/
-test/
+test/*
+!test/reading.test.mjs
 tests/
 scripts/
 work/
@@ -29,3 +30,5 @@ session.json
 
 .state/
 .state-test/
+linked-session.json
+linked/
