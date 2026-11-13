@@ -114,6 +114,59 @@ Complete UAEU SSO and MFA in the browser that opens. The prebuilt package is dow
 this repository's GitHub release and cached by npm. It needs no Git installation or TypeScript
 compiler. Each account signs in separately; students and instructors use the same package.
 
+### Automatic client configuration with add-mcp
+
+[`add-mcp`](https://github.com/neon-solutions/add-mcp) can register the released server
+for you, without editing client configuration files. After signing in above, run this
+on Windows to choose the client interactively:
+
+```powershell
+npx --yes add-mcp "cmd /d /c npx --yes --package=https://github.com/AhmTb/uaeu-blackboard-mcp/releases/download/v0.1.0/uaeu-blackboard-mcp-0.1.0.tgz uaeu-blackboard-mcp" --name uaeu-blackboard --global
+```
+
+On macOS or Linux:
+
+```sh
+npx --yes add-mcp "npx --yes --package=https://github.com/AhmTb/uaeu-blackboard-mcp/releases/download/v0.1.0/uaeu-blackboard-mcp-0.1.0.tgz uaeu-blackboard-mcp" --name uaeu-blackboard --global
+```
+
+To target a specific client without prompts, append `--agent codex --yes`.
+Other client IDs include `claude-code`, `cursor`, `claude-desktop`, and `vscode`.
+Omit `--global` to configure only the current project where the client supports it.
+Writes stay disabled unless you append `--env BB_ALLOW_WRITES=1`; individual write
+tools still require confirmation. Restart or reconnect the client after registration.
+Registration saves the launch command; npm downloads the server when it runs.
+
+### Short npm command (requires npm publication)
+
+The name `uaeu-blackboard-mcp` is not yet published on npm. **The following commands
+become usable after the maintainer publishes the package**, and do not work yet:
+
+```sh
+npx --yes uaeu-blackboard-mcp@latest login
+npx --yes add-mcp uaeu-blackboard-mcp@latest --global
+```
+
+The second command offers client selection and configures it automatically. For Codex
+without prompts, append `--agent codex --yes`. Blackboard SSO and MFA remain a separate
+interactive sign-in; the installer does not need your password in client settings.
+
+Maintainer publication, from the repository root:
+
+```sh
+npm ci
+npm test
+npm pack --dry-run
+npm login
+npm publish --access public
+```
+
+`prepack` builds the JavaScript before packing or publishing. The package allowlist
+ships compiled JavaScript, README, LICENSE, and package metadata; source, tests, browser
+profiles, session files, and local settings are excluded. npm authentication and any
+required two-factor approval must be completed by the publishing account owner.
+For subsequent releases, increment the package version before publishing.
+
 ### Codex
 
 On Windows (PowerShell):

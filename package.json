@@ -4,6 +4,11 @@
   "description": "MCP server for UAEU Blackboard Learn (uaeu.blackboard.com): courses, assignments, discussions, messages, calendar, groups, content, announcements, assessments, grading and enrollments.",
   "type": "module",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "keywords": ["mcp", "blackboard", "uaeu", "model-context-protocol"],
   "repository": {
     "type": "git",
     "url": "https://github.com/AhmTb/uaeu-blackboard-mcp.git"
@@ -20,6 +25,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "prepack": "npm run build",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "login": "node dist/cli.js login",
