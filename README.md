@@ -64,8 +64,10 @@ are never executed. Spreadsheets show cached formula results without recalculati
 slide diagrams, scanned PDFs, animations and legacy `.ppt`/`.doc`/`.xls` formats are not
 interpreted. Scans need a separate OCR reader. Files are limited to 50 MiB, expanded Office
 XML to 100 MiB, and returned document text to two million characters; limits are reported.
-Downloads go to `BB_DOWNLOAD_DIR`, defaulting to `Downloads/blackboard`, with sanitized,
-content-hashed filenames. These tools never submit work or modify Blackboard.
+Downloads go to `BB_DOWNLOAD_DIR`, defaulting to `Downloads/blackboard`, and keep the original
+filename (with filesystem-invalid characters sanitized). If a different file already uses
+that name, a numbered suffix is added, such as `Lecture (1).pptx`. Identical existing files
+are reused. These tools never submit work or modify Blackboard.
 
 `bb_read_link` verifies the URL against the supplied course source. Pass `contentId` or
 `announcementId` for an exact source, or omit both to search that course's outline and first

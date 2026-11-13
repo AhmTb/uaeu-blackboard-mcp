@@ -1,7 +1,6 @@
 import https from "node:https";
 import { lookup } from "node:dns/promises";
 import ipaddr from "ipaddr.js";
-import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { BlackboardClient } from "./client.js";
@@ -22,6 +21,55 @@ export interface Attachment {
   url: string;
 }
 export const MAX_DOWNLOAD = 50 * 1024 * 1024;
+
+/** Preserve the source name and never overwrite a different existing download. */
+export async function saveDownload(
+  directory: string,
+  fileName: string,
+  bytes: Buffer,
+): Promise<string> {
+  let safeName =
+    path
+      .basename(fileName.replace(/\\/g, "/"))
+      .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
+      .replace(/[. ]+$/, "")
+      .trim() || "attachment";
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(safeName))
+    safeName = `_${safeName}`;
+  const extension = path.extname(safeName).slice(0, 30);
+  const stem =
+    path
+      .basename(safeName, path.extname(safeName))
+      .slice(0, 150 - extension.length) || "attachment";
+  await fs.mkdir(directory, { recursive: true });
+  for (let index = 0; index < 1000; index++) {
+    const target = path.join(
+      directory,
+      `${stem}${index ? ` (${index})` : ""}${extension}`,
+    );
+    try {
+      await fs.writeFile(target, bytes, { flag: "wx", mode: 0o600 });
+      return target;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      try {
+        const existing = await fs.lstat(target);
+        if (
+          existing.isFile() &&
+          existing.size === bytes.length &&
+          (await fs.readFile(target)).equals(bytes)
+        )
+          return target;
+      } catch (readError) {
+        if ((readError as NodeJS.ErrnoException).code !== "ENOENT")
+          throw readError;
+      }
+    }
+  }
+  throw new Error(
+    "Too many different downloads share this filename. Choose another download directory.",
+  );
+}
 export function publicAddress(address: string): boolean {
   try {
     const ip = ipaddr.process(address);
@@ -338,7 +386,7 @@ export class CourseReader {
     blackboardOnly = false,
     preloaded?: Resource,
   ) {
-    const key = `${blackboardOnly}:${url}`;
+    const key = `${blackboardOnly}:${url}:${name ?? ""}`;
     const cached = this.cache.get(key);
     if (cached && cached.expires > Date.now()) return cached.value;
     const resource =
@@ -354,28 +402,11 @@ export class CourseReader {
       (blackboardOnly || resource.mimeType !== "text/html") &&
       !/^(video|audio)\//.test(resource.mimeType)
     ) {
-      const digest = createHash("sha256")
-        .update(resource.bytes)
-        .digest("hex")
-        .slice(0, 16);
-      const safeName =
-        path
-          .basename(fileName.replace(/\\/g, "/"))
-          .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
-          .slice(0, 150) || "attachment";
-      savedPath = path.join(
+      savedPath = await saveDownload(
         this.client.config.downloadDir,
-        `${digest}-${safeName}`,
+        fileName,
+        resource.bytes,
       );
-      await fs.mkdir(this.client.config.downloadDir, { recursive: true });
-      try {
-        await fs.writeFile(savedPath, resource.bytes, {
-          flag: "wx",
-          mode: 0o600,
-        });
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      }
     }
     const value = { ...extracted, savedPath, fileName, url: resource.url };
     if (this.cache.size >= 12)

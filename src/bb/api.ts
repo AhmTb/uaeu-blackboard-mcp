@@ -539,23 +539,35 @@ export class BlackboardApi {
   }
 
   async groups(courseId: string): Promise<Json[]> {
-    return unwrap<Json>(
-      await this.client.get(`/courses/${encodeURIComponent(courseId)}/groups`, { query: { limit: 200 } }),
-    );
+    return this.client.getAll<Json>(`/courses/${encodeURIComponent(courseId)}/groups`, {
+      query: this.client.mode === 'internal'
+        ? { expand: 'studentCount,memberships.user,permissions,signUpSheet', membershipAvailable: true }
+        : undefined,
+    });
+  }
+
+  async group(courseId: string, groupId: string): Promise<Json> {
+    if (this.client.mode !== 'internal') {
+      return this.client.get<Json>(`/courses/${encodeURIComponent(courseId)}/groups/${encodeURIComponent(groupId)}`);
+    }
+    // Ultra allows students to read expanded groups even when the detail route is admin-only.
+    const group = (await this.groups(courseId)).find(group => group.id === groupId);
+    if (!group) throw new BlackboardError('Group not found in the accessible course groups.', 404, groupId, {});
+    return group;
   }
 
   async groupMembers(courseId: string, groupId: string): Promise<Json[]> {
-    for (const path of [
-      `/courses/${courseId}/groups/${groupId}/memberships`,
-      `/courses/${courseId}/groups/${groupId}/users`,
-    ]) {
-      try {
-        return unwrap<Json>(await this.client.get(path, { query: { limit: 200 } }));
-      } catch {
-        continue;
-      }
+    if (this.client.mode !== 'internal') {
+      return this.client.getAll<Json>(
+        `/courses/${encodeURIComponent(courseId)}/groups/${encodeURIComponent(groupId)}/users`,
+        { query: { expand: 'user' } },
+      );
     }
-    return [];
+    const group = await this.group(courseId, groupId);
+    if (!Array.isArray(group.memberships)) {
+      throw new Error('Blackboard did not expose group memberships; member count is unknown.');
+    }
+    return group.memberships;
   }
 
   async roster(courseId: string): Promise<Json[]> {

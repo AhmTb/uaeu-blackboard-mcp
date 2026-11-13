@@ -6,6 +6,7 @@ dist/
 .idea/
 test/*
 !test/reading.test.mjs
+!test/groups.test.mjs
 tests/
 scripts/
 work/

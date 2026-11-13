@@ -18,7 +18,7 @@ export function registerGroupTools(server: McpServer, context: ToolContext): voi
     },
     tool(async ({ courseId }) => {
       const resolved = await api.resolveCourse(courseId);
-      const groups = await api.groups(resolved);
+      const [groups, me] = await Promise.all([api.groups(resolved), api.me()]);
       return json({
         courseId: resolved,
         count: groups.length,
@@ -29,6 +29,10 @@ export function registerGroupTools(server: McpServer, context: ToolContext): voi
           groupSetId: group.groupSetId,
           isAvailable: group.isAvailable,
           maximumEnrollment: group.maximumEnrollment,
+          studentCount: group.studentCount,
+          isMember: Array.isArray(group.memberships)
+            ? group.memberships.some((member: Record<string, any>) => (member.userId ?? member.user?.id) === me.id)
+            : null,
           signUpSheet: group.signUpSheet,
           memberships: group.memberships,
           permissions: group.permissions,
@@ -48,10 +52,9 @@ export function registerGroupTools(server: McpServer, context: ToolContext): voi
     },
     tool(async ({ courseId, groupId }) => {
       const resolved = await api.resolveCourse(courseId);
-      const [group, members] = await Promise.all([
-        api.raw.get<Record<string, any>>(`/courses/${resolved}/groups/${groupId}`),
-        api.groupMembers(resolved, groupId).catch(() => []),
-      ]);
+      const group = await api.group(resolved, groupId);
+      const members = Array.isArray(group.memberships)
+        ? group.memberships : await api.groupMembers(resolved, groupId);
       return json({ group, members });
     }),
   );

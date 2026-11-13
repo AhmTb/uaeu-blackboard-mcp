@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { zipSync, strToU8 } from "fflate";
 import { extractText, textWindow, htmlText } from "../dist/bb/extract.js";
 import {
@@ -8,6 +11,7 @@ import {
   blackboardHost,
   inlineAttachments,
   linksFrom,
+  saveDownload,
 } from "../dist/bb/resources.js";
 import { linkTarget, readCourseLink } from "../dist/bb/links.js";
 import {
@@ -23,6 +27,76 @@ const zip = (parts) =>
       ),
     ),
   );
+
+test("downloads keep original names and reuse identical files", async (t) => {
+  const directory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "blackboard-filenames-"),
+  );
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const bytes = Buffer.from("lecture contents");
+  const first = await saveDownload(
+    directory,
+    "Deep Learning - Architectures.pptx",
+    bytes,
+  );
+  assert.equal(path.basename(first), "Deep Learning - Architectures.pptx");
+  assert.equal(
+    await saveDownload(directory, "Deep Learning - Architectures.pptx", bytes),
+    first,
+  );
+  assert.equal((await fs.readdir(directory)).length, 1);
+});
+
+test("different downloads with the same name get numbered suffixes without overwriting", async (t) => {
+  const directory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "blackboard-filenames-"),
+  );
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const first = await saveDownload(
+    directory,
+    "Lecture.pptx",
+    Buffer.from("original"),
+  );
+  const second = await saveDownload(
+    directory,
+    "Lecture.pptx",
+    Buffer.from("updated"),
+  );
+  assert.equal(path.basename(second), "Lecture (1).pptx");
+  assert.equal(await fs.readFile(first, "utf8"), "original");
+  assert.equal(await fs.readFile(second, "utf8"), "updated");
+});
+
+test("download names cannot escape the folder and Windows reserved names are sanitized", async (t) => {
+  const directory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "blackboard-filenames-"),
+  );
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const target = await saveDownload(
+    directory,
+    "../../CON.txt",
+    Buffer.from("test"),
+  );
+  assert.equal(path.dirname(target), directory);
+  assert.equal(path.basename(target), "_CON.txt");
+});
+
+test("simultaneous different downloads cannot overwrite each other", async (t) => {
+  const directory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "blackboard-filenames-"),
+  );
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const results = await Promise.all(
+    ["first", "second"].map((value) =>
+      saveDownload(directory, "Lecture.txt", Buffer.from(value)),
+    ),
+  );
+  assert.notEqual(results[0], results[1]);
+  assert.deepEqual(
+    await Promise.all(results.map((file) => fs.readFile(file, "utf8"))),
+    ["first", "second"],
+  );
+});
 
 test("PowerPoint uses presentation order and note relationships rather than numeric filenames", async () => {
   const bytes = zip({
