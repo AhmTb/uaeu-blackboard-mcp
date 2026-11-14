@@ -87,6 +87,7 @@ export class BlackboardClient {
   async readResource(url: string, blackboardOnly = false): Promise<Resource> {
     const isBlackboard = blackboardHost(new URL(url, this.config.baseUrl), this.config.baseUrl);
     await this.loginPending;
+    this.reloadSession();
     if (isBlackboard && this.login && !cookieHeaderFor(this.state, new URL(url, this.config.baseUrl).href)) {
       await this.reauthenticate(this.state);
     }
@@ -141,37 +142,50 @@ export class BlackboardClient {
     return url.href;
   }
 
-  private absorbCookies(response: Response): void {
+  private absorbCookies(response: Response, url: string): void {
     const setCookies = response.headers.getSetCookie?.() ?? [];
     if (!setCookies.length) return;
 
     let changed = false;
     for (const raw of setCookies) {
-      const [pair] = raw.split(';');
+      const [pair, ...parts] = raw.split(';');
       if (!pair) continue;
       const index = pair.indexOf('=');
       if (index < 1) continue;
       const name = pair.slice(0, index).trim();
       const value = pair.slice(index + 1).trim();
-      const existing = this.state.cookies.find((cookie) => cookie.name === name);
-      if (existing) {
-        if (existing.value !== value) {
-          existing.value = value;
-          changed = true;
-        }
-      } else {
-        this.state.cookies.push({
-          name,
-          value,
-          domain: new URL(this.config.baseUrl).hostname,
-          path: '/',
-          expires: -1,
-          httpOnly: true,
-          secure: true,
-          sameSite: 'Lax',
-        });
-        changed = true;
+      const target = new URL(url);
+      const attributes = new Map(parts.map(part => {
+        const index = part.indexOf('=');
+        return index < 0 ? [part.trim().toLowerCase(), '']
+          : [part.slice(0, index).trim().toLowerCase(), part.slice(index + 1).trim()];
+      }));
+      const domain = (attributes.get('domain') ?? target.hostname).toLowerCase();
+      const host = domain.replace(/^\./, '');
+      if (target.hostname !== host && !target.hostname.endsWith('.' + host)) continue;
+      const defaultPath = target.pathname.slice(0, target.pathname.lastIndexOf('/')) || '/';
+      const cookiePath = attributes.get('path');
+      const scope = cookiePath?.startsWith('/') ? cookiePath : defaultPath;
+      const cookieIndex = this.state.cookies.findIndex(cookie => cookie.name === name &&
+        cookie.domain.replace(/^\./, '').toLowerCase() === host && cookie.path === scope);
+      const maxAge = attributes.get('max-age');
+      const expiresAt = Date.parse(attributes.get('expires') ?? '');
+      const expires = maxAge !== undefined && /^-?\d+$/.test(maxAge) && Number.isFinite(Number(maxAge))
+        ? Number(maxAge) <= 0 ? 0 : Date.now() / 1000 + Number(maxAge)
+        : Number.isFinite(expiresAt) ? expiresAt / 1000 : -1;
+      if (expires !== -1 && expires <= Date.now() / 1000) {
+        if (cookieIndex >= 0) { this.state.cookies.splice(cookieIndex, 1); changed = true; }
+        continue;
       }
+      const sameSite = attributes.get('samesite')?.toLowerCase();
+      const cookie: SessionState['cookies'][number] = {
+        name, value, domain, path: scope, expires,
+        httpOnly: attributes.has('httponly'), secure: attributes.has('secure'),
+        sameSite: sameSite === 'strict' ? 'Strict' : sameSite === 'none' ? 'None' : 'Lax',
+      };
+      if (cookieIndex < 0) this.state.cookies.push(cookie);
+      else this.state.cookies[cookieIndex] = cookie;
+      changed = true;
     }
 
     if (changed) {
@@ -235,6 +249,7 @@ export class BlackboardClient {
 
   private async execute<T>(path: string, url: string, options: RequestOptions): Promise<T> {
     await this.loginPending;
+    this.reloadSession();
     if (this.login && !cookieHeaderFor(this.state, url) && !this.state.oauth?.accessToken) {
       await this.reauthenticate(this.state);
     }
@@ -259,6 +274,7 @@ export class BlackboardClient {
     if (this.loginPending) return this.loginPending;
     // A slower response may belong to the session another request already replaced.
     if (this.state !== attemptedState || !this.login) return;
+    if (this.reloadSession()) return;
     this.loginPending = Promise.resolve().then(() => this.login!()).then((state) => {
       this.state = state;
       this.invalidateReads();
@@ -268,6 +284,16 @@ export class BlackboardClient {
     } finally {
       this.loginPending = undefined;
     }
+  }
+
+  private reloadSession(): boolean {
+    const saved = readState(this.config);
+    if (!saved || saved.baseUrl !== this.config.baseUrl ||
+      !(Date.parse(saved.updatedAt) > Date.parse(this.state.updatedAt))) return false;
+    // A process that signed in more recently owns the current shared session.
+    this.state = saved;
+    this.invalidateReads();
+    return true;
   }
 
   private async executeOnce<T>(path: string, url: string, options: RequestOptions): Promise<T> {
@@ -312,7 +338,7 @@ export class BlackboardClient {
         });
 
         // Old responses must not overwrite cookies captured by a concurrent login.
-        if (this.state === requestState) this.absorbCookies(response);
+        if (this.state === requestState && !this.reloadSession()) this.absorbCookies(response, url);
 
         if (response.status >= 300 && response.status < 400) {
           await response.body?.cancel();
@@ -475,6 +501,7 @@ export class BlackboardClient {
    * while the MCP server sits idle between prompts.
    */
   async keepAlive(): Promise<void> {
+    this.reloadSession();
     if (this.mode !== 'internal') return;
     if (this.loginPending || !cookieHeaderFor(this.state, this.config.baseUrl)) return;
     if (Date.now() - this.lastKeepAlive < 4 * 60 * 1000) return;

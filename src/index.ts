@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { loadConfig } from './config.js';
 import { emptyState, readState } from './state.js';
-import { loginInteractive } from './auth/login.js';
+import { recoverSession } from './auth/login.js';
 import { BlackboardClient } from './bb/client.js';
 import { registerCourseTools } from './tools/courses.js';
 import { registerAssignmentTools } from './tools/assignments.js';
@@ -30,7 +30,7 @@ export interface ToolContext {
 export async function startServer(): Promise<void> {
   const config = loadConfig();
   const state = readState(config) ?? emptyState(config.baseUrl);
-  const client = new BlackboardClient(config, state, () => loginInteractive(config));
+  const client = new BlackboardClient(config, state, () => recoverSession(config));
   const server = new McpServer({ name: 'uaeu-blackboard', version: VERSION });
   const context: ToolContext = { client, allowWrites: config.allowWrites };
 

@@ -262,17 +262,21 @@ that account's Blackboard permissions; installing this server does not grant ins
 
 The session is stored at `~/.uaeu-blackboard-mcp/session.json` (on Windows,
 `%USERPROFILE%\.uaeu-blackboard-mcp\session.json`). It contains live credentials and must stay private.
-The login browser profile is stored alongside it. Do not share either with other users.
+The login browser profile and `browser-session.json` are stored alongside it. The latter
+preserves session-only SSO cookies across browser restarts. Keep all three private.
 
-When a tool call finds a missing or expired session, the server automatically opens an Edge or
-Chrome login window. Complete SSO and MFA there; cookies are captured and saved automatically,
-and the interrupted read retries once. No copied cookies or terminal command is needed.
+Before making a request, the server picks up newer sessions saved by another local process.
+When a tool call finds a missing or expired session, it first tries the saved SSO browser
+profile in a hidden browser for up to twenty seconds. If SSO can renew the session, the read
+continues without a login prompt. Otherwise, an Edge or Chrome login window opens. Complete
+SSO and MFA there; cookies are captured and saved automatically, and the interrupted read
+retries once. No copied cookies or terminal command is needed.
 Concurrent requests share one login window. Startup and background keep-alives do not open it.
 Closing the window or failing to sign in within ten minutes returns an error; call the tool again
 to retry. Writes are never replayed automatically after sign-in; check Blackboard before retrying.
 You can still sign in explicitly with `npm run login`.
-Blackboard sessions last a few hours of inactivity; the server pings a keep-alive endpoint while it
-is running.
+The server pings a keep-alive endpoint while it is running and saves renewed cookie expiry
+times. Blackboard and UAEU still control session lifetimes and when MFA is required.
 
 ### Headless / CI sign-in
 
@@ -472,7 +476,7 @@ Instructor writes and assignment submission still require verification with the 
 ## Limitations
 
 - This is an **unofficial** integration. Blackboard can change the internal API without notice.
-- Sessions expire after a few hours of inactivity; the next tool call opens login automatically.
+- On expiry, the next tool call tries saved SSO before opening an interactive login window.
 - Ultra courses expose the full tool set. Classic courses expose less; `bb_raw_request` is the
   fallback.
 - Group join/upload and instructor write paths are experimental until exercised with the relevant
@@ -482,7 +486,7 @@ Instructor writes and assignment submission still require verification with the 
 
 ## Troubleshooting
 
-**Missing or expired session** — a tool call opens a login window automatically. Sign in there
+**Missing or expired session** — a tool call tries saved SSO, then opens a login window if needed. Sign in there
 and the read resumes. If the window was closed, call the tool again. If browser launch is blocked,
 run `npm run login` on the same machine or use the headless sign-in command above.
 

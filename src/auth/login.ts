@@ -6,12 +6,13 @@ import { chromium, type BrowserContext, type Page } from 'playwright-core';
 import type { Config } from '../config.js';
 import {
   emptyState,
+  readState,
   writeState,
   type SessionState,
   type SessionUser,
   type StoredCookie,
 } from '../state.js';
-import { pickApiMode, probeSurfaces } from '../bb/probe.js';
+import { pickApiMode, probeSurfaces, type ProbeResult } from '../bb/probe.js';
 
 const SESSION_COOKIE = 'BbRouter';
 const LOGIN_TIMEOUT_MS = 10 * 60 * 1000;
@@ -37,19 +38,31 @@ function toStoredCookies(cookies: Awaited<ReturnType<BrowserContext['cookies']>>
   }));
 }
 
-async function launchBrowser(config: Config): Promise<BrowserContext> {
+async function launchBrowser(config: Config, headless = false): Promise<BrowserContext> {
   fs.mkdirSync(profileDir(config), { recursive: true });
   const channels = ['msedge', 'chrome'] as const;
   let lastError: unknown;
 
   for (const channel of channels) {
     try {
-      return await chromium.launchPersistentContext(profileDir(config), {
+      const context = await chromium.launchPersistentContext(profileDir(config), {
         channel,
-        headless: false,
+        headless,
         viewport: { width: 1280, height: 900 },
         args: ['--no-first-run', '--no-default-browser-check'],
       });
+      try {
+        // Chromium discards session-only SSO cookies when the browser closes.
+        const saved = readState(browserSessionConfig(config));
+        if (saved?.baseUrl === config.baseUrl) {
+          const cookies = saved.cookies.filter(cookie => cookie.expires <= 0 || cookie.expires > Date.now() / 1000);
+          if (cookies.length) await context.addCookies(cookies);
+        }
+        return context;
+      } catch (error) {
+        await context.close().catch(() => undefined);
+        throw error;
+      }
     } catch (error) {
       lastError = error;
     }
@@ -60,6 +73,60 @@ async function launchBrowser(config: Config): Promise<BrowserContext> {
       '`uaeu-blackboard-mcp login --cookie "<Cookie header>"`.\n' +
       (lastError instanceof Error ? lastError.message : String(lastError)),
   );
+}
+
+function browserSessionConfig(config: Config): Config {
+  return { ...config, sessionFile: path.join(config.stateDir, 'browser-session.json') };
+}
+
+async function captureSession(config: Config, context: BrowserContext): Promise<SessionState | undefined> {
+  const cookies = await context.cookies();
+  const hostname = new URL(config.baseUrl).hostname;
+  const candidate = emptyState(config.baseUrl);
+  candidate.cookies = toStoredCookies(cookies.filter(cookie => {
+    const domain = cookie.domain.replace(/^\./, '');
+    return hostname === domain || hostname.endsWith('.' + domain);
+  }));
+  if (!candidate.cookies.some(cookie => cookie.name === SESSION_COOKIE && cookie.value)) return;
+  const probe = await probeSurfaces(config, candidate);
+  const mode = pickApiMode(probe);
+  if (!mode) return;
+  candidate.apiMode = mode;
+  candidate.user = await exportUser(config, candidate, probe);
+  candidate.lastVerifiedAt = new Date().toISOString();
+  candidate.updatedAt = candidate.lastVerifiedAt;
+  // Keep IdP cookies local to browser recovery, separate from API credentials.
+  writeState(browserSessionConfig(config), { ...candidate, cookies: toStoredCookies(await context.cookies()) });
+  writeState(config, candidate);
+  return candidate;
+}
+
+/** Bounded recovery using saved SSO only; never opens an interactive window. */
+export async function restoreSession(config: Config): Promise<SessionState | undefined> {
+  if (fs.existsSync(profileDir(config))) {
+    let context: BrowserContext | undefined;
+    try {
+      context = await launchBrowser(config, true);
+      const page = context.pages()[0] ?? await context.newPage();
+      const deadline = Date.now() + 20_000;
+      await page.goto(config.baseUrl, { waitUntil: 'domcontentloaded', timeout: 20_000 });
+      while (Date.now() < deadline) {
+        const state = await captureSession({ ...config, timeoutMs: Math.min(config.timeoutMs, Math.max(1, deadline - Date.now())) }, context);
+        if (state) return state;
+        await new Promise(resolve => setTimeout(resolve, 1_000));
+      }
+    } catch {
+      // Expired SSO, MFA, or a blocked headless browser needs the normal window.
+    } finally {
+      await context?.close().catch(() => undefined);
+    }
+  }
+  return undefined;
+}
+
+/** Reuse the existing SSO profile before asking for another interactive sign-in. */
+export async function recoverSession(config: Config): Promise<SessionState> {
+  return await restoreSession(config) ?? loginInteractive(config);
 }
 
 /** Separate, opt-in login for linked course services; never opens the user's Chrome profile. */
@@ -80,8 +147,8 @@ export async function connectLinkedService(config: Config, value: string): Promi
   } finally {input.close();await context.close().catch(()=>undefined);}
 }
 
-async function exportUser(config: Config, state: SessionState): Promise<SessionUser | undefined> {
-  const probe = await probeSurfaces(config, state);
+async function exportUser(config: Config, state: SessionState, result?: ProbeResult): Promise<SessionUser | undefined> {
+  const probe = result ?? await probeSurfaces(config, state);
   const mode = pickApiMode(probe);
   if (!mode) return undefined;
 
@@ -126,26 +193,8 @@ export async function loginInteractive(config: Config): Promise<SessionState> {
         throw new Error('The browser was closed before a session was captured.');
       }
 
-      const cookies = await context.cookies();
-      const hasSession = cookies.some((cookie) => cookie.name === SESSION_COOKIE && cookie.value);
-
-      if (hasSession) {
-        const candidate = emptyState(config.baseUrl);
-        candidate.cookies = toStoredCookies(
-          cookies.filter((cookie) => cookie.domain.includes('blackboard.com')),
-        );
-        const probe = await probeSurfaces(config, candidate);
-        const mode = pickApiMode(probe);
-
-        if (mode) {
-          candidate.apiMode = mode;
-          candidate.user = await exportUser(config, candidate);
-          candidate.lastVerifiedAt = new Date().toISOString();
-          candidate.updatedAt = candidate.lastVerifiedAt;
-          state = candidate;
-          break;
-        }
-      }
+      state = await captureSession(config, context);
+      if (state) break;
 
       if (Date.now() - lastNote > 15_000) {
         lastNote = Date.now();

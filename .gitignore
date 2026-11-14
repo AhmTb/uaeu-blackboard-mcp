@@ -17,6 +17,7 @@ spec/
 *.har
 *.har.gz
 session.json
+browser-session.json
 .env
 .env.*
 *.pem
