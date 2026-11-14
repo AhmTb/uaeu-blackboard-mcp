@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ToolContext } from '../index.js';
 import { BlackboardApi, htmlToText } from '../bb/api.js';
+import { CourseReader } from '../bb/resources.js';
 import { assertWrites, json, tool } from './util.js';
 
 export function registerAssignmentTools(server: McpServer, context: ToolContext): void {
@@ -54,6 +55,7 @@ export function registerAssignmentTools(server: McpServer, context: ToolContext)
       const resolved = await api.resolveCourse(courseId);
       const { item, summary } = await api.assignment(resolved, contentId);
       const detail = item.contentDetail?.['resource/x-bb-asmt-test-link']?.test ?? {};
+      const files = await new CourseReader(context.client).attachments(resolved, contentId);
       return json({
         courseId: resolved,
         contentId,
@@ -70,7 +72,8 @@ export function registerAssignmentTools(server: McpServer, context: ToolContext)
           allowTextSubmission: detail.deploymentSettings?.allowTextSubmission,
           attemptCount: detail.deploymentSettings?.attemptCount,
         },
-        attachments: item.attachments ?? [],
+        attachments: files.files,
+        links: files.links,
         raw: includeRaw ? item : undefined,
       });
     }),

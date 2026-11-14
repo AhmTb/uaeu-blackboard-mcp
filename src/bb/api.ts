@@ -76,7 +76,25 @@ function bodyText(body: unknown): string {
   if (!body) return '';
   if (typeof body === 'string') return htmlToText(body);
   const record = body as Json;
-  return htmlToText(record.rawText ?? record.displayText ?? '');
+  return [record.rawText, record.formattedText, record.displayText]
+    .map((value) => typeof value === 'string' ? htmlToText(value) : '')
+    .find((value) => value.trim()) ?? '';
+}
+
+/** Ultra embeds the assessment one level below the deployment's test settings. */
+export function assessmentFrom(item: Json): Json {
+  const detail = item.contentDetail ?? {};
+  const link = detail['resource/x-bb-asmt-test-link'] ?? detail['resource/x-bb-assignment'] ?? {};
+  return link.test?.assessment ?? link.assessment ?? {};
+}
+
+export function assignmentInstructions(item: Json): string {
+  const detail = item.contentDetail ?? {};
+  const link = detail['resource/x-bb-asmt-test-link'] ?? detail['resource/x-bb-assignment'] ?? {};
+  const assessment = assessmentFrom(item);
+  return [assessment.instructions, link.test?.instructions, link.instructions,
+    assessment.description, item.body, item.description]
+    .map(bodyText).find((value) => value.trim()) ?? '';
 }
 
 function unwrap<T>(page: unknown): T[] {
@@ -262,7 +280,7 @@ export class BlackboardApi {
           : undefined,
         lastAttemptId: grade?.lastAttemptId as string | undefined,
         score: (grade?.score ?? column.score) as number | undefined,
-        instructions: bodyText(test.instructions ?? link.instructions ?? item.description),
+        instructions: assignmentInstructions(item),
         handler,
         parentId: item.parentId as string | undefined,
         visible: item.visibility === 'VISIBLE',

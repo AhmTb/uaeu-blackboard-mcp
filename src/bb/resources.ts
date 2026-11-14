@@ -260,7 +260,8 @@ export function linksFrom(
   const scan = (html: unknown) => {
     if (html && typeof html === "object") {
       const body = html as Record<string, unknown>;
-      html = body.rawText ?? body.formattedText ?? body.displayText;
+      html = [body.rawText, body.formattedText, body.displayText]
+        .find((value) => typeof value === "string" && value.trim());
     }
     if (typeof html !== "string") return;
     for (const m of html.matchAll(
@@ -271,7 +272,9 @@ export function linksFrom(
       /<a\b[^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
     ))
       add(m[1], decodeText((m[2] ?? "").replace(/<[^>]*>/g, "")).trim());
-    for (const m of html.matchAll(/https:\/\/[^\s<>"']+/g))
+    // Bare URLs belong to visible text; HTML metadata can contain encoded JSON.
+    const visibleText = decodeText(html.replace(/<[^>]*>/g, " "));
+    for (const m of visibleText.matchAll(/https:\/\/[^\s<>"']+/g))
       add(m[0].replace(/[),.;]+$/, ""));
   };
   scan(item.description);
@@ -286,6 +289,10 @@ export function linksFrom(
     add(detail?.url, item.title);
     scan(detail?.instructions);
     scan(detail?.test?.instructions);
+    scan(detail?.test?.assessment?.instructions);
+    scan(detail?.test?.assessment?.description);
+    scan(detail?.assessment?.instructions);
+    scan(detail?.assessment?.description);
   }
   if (typeof item.contentHandler === "object") {
     add(item.contentHandler.url, item.title);

@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ToolContext } from '../index.js';
-import { BlackboardApi } from '../bb/api.js';
+import { BlackboardApi, assessmentFrom } from '../bb/api.js';
+import { CourseReader } from '../bb/resources.js';
+import { BlackboardError } from '../bb/client.js';
 import { assertWrites, json, tool } from './util.js';
 
 export function registerAssessmentTools(server: McpServer, context: ToolContext): void {
@@ -53,13 +55,31 @@ export function registerAssessmentTools(server: McpServer, context: ToolContext)
         `/courses/${resolved}/gradebook/columns/${columnId}`,
       );
       let questions: unknown = undefined;
+      let content: unknown;
+      let instructions: string | undefined;
+      let assessment: Record<string, any> = {};
+      let attachments: unknown[] = [];
+      const limitations: string[] = [];
       const contentId = column.contentId;
       if (contentId) {
-        questions = await api.raw
-          .get(`/courses/${resolved}/assessments/${contentId}/questions`)
-          .catch(() => undefined);
+        const detail = await api.assignment(resolved, contentId);
+        content = detail.item;
+        instructions = detail.summary?.instructions;
+        assessment = assessmentFrom(detail.item);
+        attachments = (await new CourseReader(context.client).attachments(resolved, contentId)).files;
+        if (assessment.questionCount === 0) questions = [];
+        else if (assessment.id) {
+          try {
+            questions = await api.raw.getAll(
+              `/courses/${encodeURIComponent(resolved)}/assessments/${encodeURIComponent(assessment.id)}/questions`,
+            );
+          } catch (error) {
+            if (!(error instanceof BlackboardError) || ![403, 404].includes(error.status)) throw error;
+            limitations.push(`Questions unavailable (HTTP ${error.status}); no assessment attempt was started.`);
+          }
+        } else limitations.push('No assessment ID exposed by linked content.');
       }
-      return json({ column, questions });
+      return json({ column, content, assessmentId: assessment.id, instructions, attachments, questions, limitations });
     }),
   );
 
