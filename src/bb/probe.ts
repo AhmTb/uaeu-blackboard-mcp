@@ -33,7 +33,8 @@ async function probeOne(url: string, cookie: string, timeoutMs: number): Promise
       }
     }
     return {
-      ok: res.ok,
+      ok: res.ok && (res.headers.get('content-type') ?? '').includes('json') &&
+        body !== null && typeof body === 'object',
       status: res.status,
       contentType: res.headers.get('content-type') ?? undefined,
       body,

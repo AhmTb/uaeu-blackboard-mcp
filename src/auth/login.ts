@@ -17,7 +17,7 @@ const SESSION_COOKIE = 'BbRouter';
 const LOGIN_TIMEOUT_MS = 10 * 60 * 1000;
 
 function log(message: string): void {
-  process.stdout.write(message + '\n');
+  process.stderr.write(message + '\n');
 }
 
 function profileDir(config: Config): string {

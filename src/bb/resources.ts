@@ -22,6 +22,13 @@ export interface Attachment {
 }
 export const MAX_DOWNLOAD = 50 * 1024 * 1024;
 
+export class ResourceSignInError extends Error {
+  constructor() {
+    super("Blackboard resource requires sign-in.");
+    this.name = "ResourceSignInError";
+  }
+}
+
 /** Preserve the source name and never overwrite a different existing download. */
 export async function saveDownload(
   directory: string,
@@ -193,9 +200,16 @@ export async function fetchResource(
       result.status < 400 &&
       result.headers.location
     ) {
-      url = resourceUrl(result.headers.location, url.href);
+      const next = resourceUrl(result.headers.location, url.href);
+      if (
+        blackboardHost(url, options.baseUrl) &&
+        /(?:\/webapps\/login|\/ultra\/login|\/auth-saml\/|\/adfs\/|\/saml2?\/)/i.test(next.pathname)
+      ) throw new ResourceSignInError();
+      url = next;
       continue;
     }
+    if (result.status === 401 && blackboardHost(url, options.baseUrl))
+      throw new ResourceSignInError();
     if (result.status === 401 || result.status === 403)
       throw new Error(
         "This resource requires sign-in or your account does not have access.",
@@ -203,6 +217,11 @@ export async function fetchResource(
     if (result.status < 200 || result.status >= 300)
       throw new Error(`Resource returned HTTP ${result.status}.`);
     const disposition = result.headers["content-disposition"] ?? "";
+    if (
+      blackboardHost(url, options.baseUrl) &&
+      String(result.headers["content-type"]).includes("text/html") &&
+      /(?:id=["']loginForm["']|name=["']login["']|\/webapps\/login\/)/i.test(result.bytes.toString("utf8"))
+    ) throw new ResourceSignInError();
     const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
     const plain = /filename="([^"]+)"|filename=([^;]+)/i.exec(disposition);
     let fileName =

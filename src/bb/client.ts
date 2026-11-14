@@ -2,7 +2,7 @@ import type { Config } from '../config.js';
 import { setTimeout as delay } from 'node:timers/promises';
 import { cookieHeaderFor, readState, writeState, type SessionState } from '../state.js';
 import path from 'node:path';
-import { blackboardHost, fetchResource, type Resource } from './resources.js';
+import { blackboardHost, fetchResource, ResourceSignInError, type Resource } from './resources.js';
 
 export class BlackboardError extends Error {
   readonly status: number;
@@ -62,10 +62,15 @@ export class BlackboardClient {
   private cacheEpoch = 0;
   private cacheHits = 0;
   private sharedReads = 0;
+  private loginPending?: Promise<void>;
   private readonly cache = new Map<string, { expires: number; value: unknown }>();
   private readonly inFlight = new Map<string, Promise<unknown>>();
 
-  constructor(config: Config, state: SessionState) {
+  constructor(
+    config: Config,
+    state: SessionState,
+    private readonly login?: () => Promise<SessionState>,
+  ) {
     this.config = config;
     this.state = state;
   }
@@ -79,8 +84,14 @@ export class BlackboardClient {
   }
 
   /** GET a course resource; cookies remain domain/path scoped on every redirect. */
-  readResource(url: string, blackboardOnly = false): Promise<Resource> {
-    return fetchResource(url, {
+  async readResource(url: string, blackboardOnly = false): Promise<Resource> {
+    const isBlackboard = blackboardHost(new URL(url, this.config.baseUrl), this.config.baseUrl);
+    await this.loginPending;
+    if (isBlackboard && this.login && !cookieHeaderFor(this.state, new URL(url, this.config.baseUrl).href)) {
+      await this.reauthenticate(this.state);
+    }
+    const attemptedState = this.state;
+    const read = () => fetchResource(url, {
       baseUrl: this.config.baseUrl, timeoutMs: this.config.timeoutMs,
       blackboardOnly, cookieFor: target => {
         if (blackboardHost(new URL(target),this.config.baseUrl)) return cookieHeaderFor(this.state,target);
@@ -89,6 +100,13 @@ export class BlackboardClient {
         return linked ? cookieHeaderFor(linked,target) : '';
       },
     });
+    try {
+      return await read();
+    } catch (error) {
+      if (!(error instanceof ResourceSignInError) || !this.login) throw error;
+      await this.reauthenticate(attemptedState);
+      return read();
+    }
   }
 
   /** `/learn/api/v1` for browser sessions, `/learn/api/public/v1` for OAuth. */
@@ -216,6 +234,43 @@ export class BlackboardClient {
   }
 
   private async execute<T>(path: string, url: string, options: RequestOptions): Promise<T> {
+    await this.loginPending;
+    if (this.login && !cookieHeaderFor(this.state, url) && !this.state.oauth?.accessToken) {
+      await this.reauthenticate(this.state);
+    }
+    const attemptedState = this.state;
+    try {
+      return await this.executeOnce<T>(path, this.url(path, options.query), options);
+    } catch (error) {
+      if (!(error instanceof NotAuthenticatedError) || !this.login) throw error;
+      await this.reauthenticate(attemptedState);
+      if ((options.method ?? 'GET') !== 'GET') {
+        throw new BlackboardError(
+          'Blackboard sign-in completed. This write was not retried; check Blackboard before trying it again.',
+          401, path, undefined,
+        );
+      }
+      // One auth retry, with a fresh network timeout after the browser closes.
+      return this.executeOnce<T>(path, this.url(path, options.query), options);
+    }
+  }
+
+  private async reauthenticate(attemptedState: SessionState): Promise<void> {
+    if (this.loginPending) return this.loginPending;
+    // A slower response may belong to the session another request already replaced.
+    if (this.state !== attemptedState || !this.login) return;
+    this.loginPending = Promise.resolve().then(() => this.login!()).then((state) => {
+      this.state = state;
+      this.invalidateReads();
+    });
+    try {
+      await this.loginPending;
+    } finally {
+      this.loginPending = undefined;
+    }
+  }
+
+  private async executeOnce<T>(path: string, url: string, options: RequestOptions): Promise<T> {
     const method = options.method ?? 'GET';
     const headers: Record<string, string> = {
       accept: 'application/json, */*;q=0.8',
@@ -247,6 +302,7 @@ export class BlackboardClient {
           if (xsrf) headers['x-blackboard-xsrf'] = xsrf;
         }
         this.requestCount += 1;
+        const requestState = this.state;
         const response = await fetch(url, {
           method,
           headers,
@@ -255,7 +311,8 @@ export class BlackboardClient {
           signal,
         });
 
-        this.absorbCookies(response);
+        // Old responses must not overwrite cookies captured by a concurrent login.
+        if (this.state === requestState) this.absorbCookies(response);
 
         if (response.status >= 300 && response.status < 400) {
           await response.body?.cancel();
@@ -297,6 +354,10 @@ export class BlackboardClient {
           );
         }
 
+        if ((response.headers.get('content-type') ?? '').includes('text/html')) {
+          await response.body?.cancel();
+          throw new NotAuthenticatedError(path, undefined);
+        }
         if (options.raw) return response as T;
         return (await this.parse(response, path)) as T;
       } catch (error) {
@@ -415,10 +476,12 @@ export class BlackboardClient {
    */
   async keepAlive(): Promise<void> {
     if (this.mode !== 'internal') return;
+    if (this.loginPending || !cookieHeaderFor(this.state, this.config.baseUrl)) return;
     if (Date.now() - this.lastKeepAlive < 4 * 60 * 1000) return;
     this.lastKeepAlive = Date.now();
     try {
-      await this.get('/utilities/keepBbSessionActive');
+      const path = '/utilities/keepBbSessionActive';
+      await this.executeOnce(path, this.url(path), {});
     } catch {
       // Keep-alive is best-effort; a real request will surface auth failures.
     }

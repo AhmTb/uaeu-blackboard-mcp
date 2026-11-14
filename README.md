@@ -264,7 +264,13 @@ The session is stored at `~/.uaeu-blackboard-mcp/session.json` (on Windows,
 `%USERPROFILE%\.uaeu-blackboard-mcp\session.json`). It contains live credentials and must stay private.
 The login browser profile is stored alongside it. Do not share either with other users.
 
-To sign in again later — for example after the session expires — rerun `npm run login`.
+When a tool call finds a missing or expired session, the server automatically opens an Edge or
+Chrome login window. Complete SSO and MFA there; cookies are captured and saved automatically,
+and the interrupted read retries once. No copied cookies or terminal command is needed.
+Concurrent requests share one login window. Startup and background keep-alives do not open it.
+Closing the window or failing to sign in within ten minutes returns an error; call the tool again
+to retry. Writes are never replayed automatically after sign-in; check Blackboard before retrying.
+You can still sign in explicitly with `npm run login`.
 Blackboard sessions last a few hours of inactivity; the server pings a keep-alive endpoint while it
 is running.
 
@@ -466,7 +472,7 @@ Instructor writes and assignment submission still require verification with the 
 ## Limitations
 
 - This is an **unofficial** integration. Blackboard can change the internal API without notice.
-- Sessions expire after a few hours of inactivity; rerun `npm run login`.
+- Sessions expire after a few hours of inactivity; the next tool call opens login automatically.
 - Ultra courses expose the full tool set. Classic courses expose less; `bb_raw_request` is the
   fallback.
 - Group join/upload and instructor write paths are experimental until exercised with the relevant
@@ -476,9 +482,9 @@ Instructor writes and assignment submission still require verification with the 
 
 ## Troubleshooting
 
-**`No Blackboard session found`** — run `npm run login` in this directory.
-
-**`Blackboard session is missing or expired`** — rerun `npm run login`.
+**Missing or expired session** — a tool call opens a login window automatically. Sign in there
+and the read resumes. If the window was closed, call the tool again. If browser launch is blocked,
+run `npm run login` on the same machine or use the headless sign-in command above.
 
 **`Your Blackboard account is not permitted to perform this action`** — the tool needs a role your
 account does not have (for example grading as a student), or the item is restricted.
