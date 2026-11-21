@@ -13,6 +13,8 @@ import {
   type StoredCookie,
 } from '../state.js';
 import { pickApiMode, probeSurfaces, type ProbeResult } from '../bb/probe.js';
+import { automaticLoginEnabled } from './preferences.js';
+import { RememberedLogin } from './remembered-login.js';
 
 const SESSION_COOKIE = 'BbRouter';
 const LOGIN_TIMEOUT_MS = 10 * 60 * 1000;
@@ -79,6 +81,23 @@ function browserSessionConfig(config: Config): Config {
   return { ...config, sessionFile: path.join(config.stateDir, 'browser-session.json') };
 }
 
+async function followSsoLink(config: Config, context: BrowserContext, attempted: WeakSet<Page>): Promise<void> {
+  for (const page of context.pages()) {
+    try {
+      if (attempted.has(page) || new URL(page.url()).origin !== new URL(config.baseUrl).origin) continue;
+      // Blackboard can stop at a login chooser instead of redirecting to its IdP.
+      const link = page.locator('a[href*="/auth-saml/saml/SSO/"]').first();
+      if (!await link.isVisible()) continue;
+      const target = new URL(await link.getAttribute('href') ?? '', config.baseUrl);
+      if (target.origin !== new URL(config.baseUrl).origin || !target.pathname.startsWith('/auth-saml/saml/SSO/')) continue;
+      attempted.add(page);
+      await link.click({ timeout: 1_000, noWaitAfter: true });
+    } catch {
+      // A redirect can remove the chooser while it is being inspected.
+    }
+  }
+}
+
 async function captureSession(config: Config, context: BrowserContext): Promise<SessionState | undefined> {
   const cookies = await context.cookies();
   const hostname = new URL(config.baseUrl).hostname;
@@ -101,23 +120,32 @@ async function captureSession(config: Config, context: BrowserContext): Promise<
   return candidate;
 }
 
-/** Bounded recovery using saved SSO only; never opens an interactive window. */
-export async function restoreSession(config: Config): Promise<SessionState | undefined> {
-  if (fs.existsSync(profileDir(config))) {
+/** Bounded recovery with saved SSO and opt-in credentials; no interactive window. */
+export async function restoreSession(config: Config, flow?: RememberedLogin): Promise<SessionState | undefined> {
+  if (!automaticLoginEnabled(config)) return undefined;
+  flow ??= await RememberedLogin.create(config);
+  if (fs.existsSync(profileDir(config)) || flow.hasSavedLogin) {
     let context: BrowserContext | undefined;
+    let detach: (() => void) | undefined;
     try {
       context = await launchBrowser(config, true);
+      detach = flow.attach(context);
       const page = context.pages()[0] ?? await context.newPage();
       const deadline = Date.now() + 20_000;
+      const ssoAttempts = new WeakSet<Page>();
       await page.goto(config.baseUrl, { waitUntil: 'domcontentloaded', timeout: 20_000 });
       while (Date.now() < deadline) {
+        if (!automaticLoginEnabled(config)) return undefined;
         const state = await captureSession({ ...config, timeoutMs: Math.min(config.timeoutMs, Math.max(1, deadline - Date.now())) }, context);
-        if (state) return state;
+        if (state) { await flow.verified(); return state; }
+        await followSsoLink(config, context, ssoAttempts);
+        await flow.fill(context);
         await new Promise(resolve => setTimeout(resolve, 1_000));
       }
     } catch {
       // Expired SSO, MFA, or a blocked headless browser needs the normal window.
     } finally {
+      detach?.();
       await context?.close().catch(() => undefined);
     }
   }
@@ -126,7 +154,18 @@ export async function restoreSession(config: Config): Promise<SessionState | und
 
 /** Reuse the existing SSO profile before asking for another interactive sign-in. */
 export async function recoverSession(config: Config): Promise<SessionState> {
-  return await restoreSession(config) ?? loginInteractive(config);
+  const checkEnabled = () => {
+    if (!automaticLoginEnabled(config)) {
+      throw new Error('Automatic sign-in is disabled. Run `uaeu-blackboard-mcp login` to sign in manually, or `uaeu-blackboard-mcp auto-login on` to enable it.');
+    }
+  };
+  checkEnabled();
+  const flow = await RememberedLogin.create(config);
+  const restored = await restoreSession(config, flow);
+  if (restored) return restored;
+  checkEnabled();
+  flow.resetCapture();
+  return loginInteractive(config, flow, true);
 }
 
 /** Separate, opt-in login for linked course services; never opens the user's Chrome profile. */
@@ -172,11 +211,13 @@ async function exportUser(config: Config, state: SessionState, result?: ProbeRes
 }
 
 /** Interactive SSO login: opens a real browser, waits for the session, then stores cookies. */
-export async function loginInteractive(config: Config): Promise<SessionState> {
+export async function loginInteractive(config: Config, flow?: RememberedLogin, automatic = false): Promise<SessionState> {
+  flow ??= await RememberedLogin.create(config);
   const context = await launchBrowser(config);
-  const page: Page = context.pages()[0] ?? (await context.newPage());
+  const detach = flow.attach(context);
 
   try {
+    const page: Page = context.pages()[0] ?? (await context.newPage());
     log('');
     log('  A browser window is open. Sign in to UAEU Blackboard (SSO + MFA).');
     log('  This window stays open until the session is captured. Up to 10 minutes.');
@@ -187,14 +228,18 @@ export async function loginInteractive(config: Config): Promise<SessionState> {
     const deadline = Date.now() + LOGIN_TIMEOUT_MS;
     let state: SessionState | undefined;
     let lastNote = 0;
+    const ssoAttempts = new WeakSet<Page>();
 
     while (Date.now() < deadline) {
+      if (automatic && !automaticLoginEnabled(config)) throw new Error('Automatic sign-in was disabled. Run login to sign in manually.');
       if (!context.browser()?.isConnected() && context.pages().length === 0) {
         throw new Error('The browser was closed before a session was captured.');
       }
 
       state = await captureSession(config, context);
       if (state) break;
+      if (automaticLoginEnabled(config)) await followSsoLink(config, context, ssoAttempts);
+      await flow.fill(context);
 
       if (Date.now() - lastNote > 15_000) {
         lastNote = Date.now();
@@ -209,6 +254,7 @@ export async function loginInteractive(config: Config): Promise<SessionState> {
     }
 
     writeState(config, state);
+    await flow.verified();
 
     log('');
     log(`  Signed in as ${state.user?.displayName ?? state.user?.userName ?? 'unknown user'}`);
@@ -218,6 +264,7 @@ export async function loginInteractive(config: Config): Promise<SessionState> {
     log('');
     return state;
   } finally {
+    detach();
     await context.close().catch(() => undefined);
   }
 }

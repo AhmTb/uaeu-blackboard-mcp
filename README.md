@@ -278,6 +278,46 @@ You can still sign in explicitly with `npm run login`.
 The server pings a keep-alive endpoint while it is running and saves renewed cookie expiry
 times. Blackboard and UAEU still control session lifetimes and when MFA is required.
 
+### Remember your login and control automatic sign-in
+
+To remember your username and password, sign in once with:
+
+```powershell
+npm run login -- --remember
+```
+
+This opts into saving credentials submitted during a successful browser sign-in in the
+operating system's credential store: Windows Credential Manager, macOS Keychain, or Linux
+Secret Service. The [keyring binding](https://github.com/Brooooooklyn/keyring-node) handles
+OS storage; passwords are never written to the session JSON, settings, logs, or environment.
+Linux requires an unlocked Secret Service; remembering fails without a plaintext fallback.
+If the browser goes straight through existing SSO without showing a password form, there
+is no password to capture. It will be remembered the next time you enter it successfully.
+
+When a session expires, the server tries saved SSO first, then the remembered login. It
+fills and submits supported Blackboard, Microsoft, and UAEU ADFS login forms. Passwords
+are supplied only to the exact HTTPS origin where they were originally submitted; other
+university identity providers can be explicitly allowed with `BB_LOGIN_ORIGINS`.
+University-enforced MFA, CAPTCHA, password changes, and account selection can still need
+your input. After an unsuccessful or interrupted password attempt, automatic password
+submission pauses until a successful manual sign-in validates the credentials again.
+
+```powershell
+node dist/cli.js auto-login off     # stop automatic recovery and password capture/use
+node dist/cli.js auto-login on      # enable recovery and remembering the next login
+node dist/cli.js auto-login status  # inspect settings without exposing credentials
+node dist/cli.js auto-login forget  # disable recovery and delete the saved password
+```
+
+You can also ask your assistant to enable or disable automatic sign-in using
+`bb_set_auto_login` (`enabled: true/false`, optional `forget: true` when disabling).
+`bb_get_login_settings` reports the effective setting and saved-login availability.
+These local settings take effect on subsequent recovery attempts without restarting the
+server and are separate from Blackboard write permissions. An explicit `BB_AUTO_LOGIN=0`
+or `1` overrides the saved on/off preference. With automatic sign-in off, an existing API
+session still works, and `login` remains available for manual sign-in. Forgetting the
+password leaves the existing session cookies and browser profile in place.
+
 ### Headless / CI sign-in
 
 Copy the `Cookie:` header from any request to `uaeu.blackboard.com` in DevTools and run:
@@ -398,6 +438,8 @@ Most tools accept a `courseId` that can be an internal id (`_12345_1`), a course
 | `BB_URL` | Instance origin, default `https://uaeu.blackboard.com` |
 | `BB_ALLOW_WRITES` | `1` enables write tools (still require `confirm: true`) |
 | `BB_STATE_DIR` | Session directory, default `%USERPROFILE%\.uaeu-blackboard-mcp` |
+| `BB_AUTO_LOGIN` | Optional `0`/`false` or `1`/`true` override for automatic session recovery. Default uses the saved preference (initially enabled, without password storage) |
+| `BB_LOGIN_ORIGINS` | Comma-separated additional exact HTTPS origins permitted for opt-in login capture/refill; never wildcard domains |
 | `BB_PAGE_SIZE` | Default list page size, 1–200, default 50 |
 | `BB_TIMEOUT_MS` | Total timeout per HTTP request including retries and backoff, default 30000 |
 | `BB_CACHE_TTL_MS` | Identity, membership and outline cache lifetime, default 15000; 0 disables caching |
@@ -476,7 +518,7 @@ Instructor writes and assignment submission still require verification with the 
 ## Limitations
 
 - This is an **unofficial** integration. Blackboard can change the internal API without notice.
-- On expiry, the next tool call tries saved SSO before opening an interactive login window.
+- On expiry, the next tool call tries saved SSO and opt-in remembered credentials before opening an interactive login window, unless automatic sign-in is disabled.
 - Ultra courses expose the full tool set. Classic courses expose less; `bb_raw_request` is the
   fallback.
 - Group join/upload and instructor write paths are experimental until exercised with the relevant

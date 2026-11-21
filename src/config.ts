@@ -9,6 +9,8 @@ export interface Config {
   sessionFile: string;
   downloadDir: string;
   allowWrites: boolean;
+  autoLogin?: boolean;
+  loginOrigins?: string[];
   pageSize: number;
   timeoutMs: number;
   cacheTtlMs?: number;
@@ -55,6 +57,14 @@ export function loadConfig(): Config {
     sessionFile: path.join(stateDir, 'session.json'),
     downloadDir,
     allowWrites: env('BB_ALLOW_WRITES') === '1' || env('BB_ALLOW_WRITES') === 'true',
+    autoLogin: env('BB_AUTO_LOGIN') === undefined ? undefined : ['1', 'true'].includes(env('BB_AUTO_LOGIN')!),
+    loginOrigins: env('BB_LOGIN_ORIGINS')?.split(',').map(value => {
+      const url = new URL(value.trim());
+      if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
+        throw new Error('BB_LOGIN_ORIGINS must contain comma-separated HTTPS origins.');
+      }
+      return url.origin;
+    }),
     pageSize: intEnv('BB_PAGE_SIZE', 50, 1, 200),
     timeoutMs: intEnv('BB_TIMEOUT_MS', 30_000, 1_000, 120_000),
     cacheTtlMs: intEnv('BB_CACHE_TTL_MS', 15_000, 0, 60_000),

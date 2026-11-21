@@ -19,6 +19,7 @@ import { registerEnrollmentTools } from './tools/enrollment.js';
 import { registerRawTools } from './tools/raw.js';
 import { registerReadingTools } from './tools/reading.js';
 import { registerStudentTools } from './tools/student.js';
+import { registerAuthTools } from './tools/auth.js';
 
 export const VERSION = '0.1.0';
 
@@ -49,6 +50,7 @@ export async function startServer(): Promise<void> {
   registerRawTools(server, context);
   registerReadingTools(server, context);
   registerStudentTools(server, context);
+  registerAuthTools(server, context);
 
   const timer = setInterval(() => {
     void client.keepAlive();
